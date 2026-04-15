@@ -1,5 +1,7 @@
 import streamlit as st
 st.set_page_config(page_title="Fraud Detection System", layout="wide")
+st.info("Username: admin | Password: admin123")
+
 
 import pandas as pd
 import numpy as np
@@ -95,8 +97,8 @@ def load_data():
         files = os.listdir(path)
         st.write("📁 Dataset files:", files)
 
-        # 👉 After first run, replace with exact filename (e.g. "creditcard.csv")
-        file_path = os.path.join(path, files[0])
+       
+        file_path = os.path.join(path, "fraud_detection_credit_card_small.csv")
 
         df = pd.read_csv(file_path)
         return df
