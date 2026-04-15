@@ -9,3 +9,4 @@ imbalanced-learn
 xgboost==2.0.3
 pillow==10.3.0
 scipy==1.11.4
+kagglehub
