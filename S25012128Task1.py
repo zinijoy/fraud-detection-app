@@ -6,6 +6,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import seaborn as sns
+import os
+import kagglehub
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
@@ -80,236 +82,236 @@ threshold = st.sidebar.slider("Fraud Threshold", 0.1, 0.9, 0.3)
 
 
 # =========================
-# ADMIN CONTROL
+# LOAD DATA FROM KAGGLE
 # =========================
 
-if st.session_state.role == "admin":
-    st.sidebar.success("Admin Access")
-
-    if st.sidebar.button("Clear History"):
-        st.session_state.history = []
-        st.success("History cleared")
-
-    uploaded_file = st.file_uploader("Upload Dataset", type=["csv"])
-
-else:
-    st.sidebar.info("User Access")
-    st.warning("Only admin can upload dataset")
-    uploaded_file = None
-
-
-# =========================
-# LOAD DATA SAFELY
-# =========================
-
-if uploaded_file is not None:
-
+@st.cache_data
+def load_data():
     try:
-        df = pd.read_csv(uploaded_file)
+        path = kagglehub.dataset_download(
+            "hnytfo/credit-card-transactions-with-fraud-detection"
+        )
+
+        files = os.listdir(path)
+        st.write("📁 Dataset files:", files)
+
+        # 👉 After first run, replace with exact filename (e.g. "creditcard.csv")
+        file_path = os.path.join(path, files[0])
+
+        df = pd.read_csv(file_path)
+        return df
+
     except Exception as e:
         st.error(f"Error loading dataset: {e}")
         st.stop()
 
-    st.subheader("Dataset Preview")
-    st.dataframe(df.head())
 
-    df_original = df.copy()
+df = load_data()
 
-    # =========================
-    # CLEANING
-    # =========================
+st.subheader("Dataset Preview")
+st.dataframe(df.head())
 
-    df = df.drop(columns=[
-        'Unnamed: 0', 'trans_date_trans_time', 'cc_num',
-        'first', 'last', 'street', 'trans_num'
-    ], errors='ignore')
-
-    if 'merch_zipcode' in df.columns:
-        imputer = SimpleImputer(strategy='most_frequent')
-        df['merch_zipcode'] = imputer.fit_transform(df[['merch_zipcode']])
-
-    # =========================
-    # ENCODING
-    # =========================
-
-    encoders = {}
-    for col in df.select_dtypes(include='object').columns:
-        le = LabelEncoder()
-        df[col] = le.fit_transform(df[col].astype(str))
-        encoders[col] = le
-
-    # =========================
-    # CHECK TARGET COLUMN
-    # =========================
-
-    if 'is_fraud' not in df.columns:
-        st.error("Dataset must contain 'is_fraud' column")
-        st.stop()
-
-    X = df.drop('is_fraud', axis=1)
-    y = df['is_fraud']
+df_original = df.copy()
 
 
-    # =========================
-    # TRAIN TEST SPLIT
-    # =========================
+# =========================
+# CLEANING
+# =========================
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+df = df.drop(columns=[
+    'Unnamed: 0', 'trans_date_trans_time', 'cc_num',
+    'first', 'last', 'street', 'trans_num'
+], errors='ignore')
 
-    # =========================
-    # SMOTE
-    # =========================
-
-    smote = SMOTE(random_state=42)
-    X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
+if 'merch_zipcode' in df.columns:
+    imputer = SimpleImputer(strategy='most_frequent')
+    df['merch_zipcode'] = imputer.fit_transform(df[['merch_zipcode']])
 
 
-    # =========================
-    # MODELS
-    # =========================
+# =========================
+# ENCODING
+# =========================
 
-    rf_model = RandomForestClassifier(
-        n_estimators=100,
-        class_weight='balanced',
-        random_state=42
-    )
-
-    rf_model.fit(X_resampled, y_resampled)
-    rf_pred = rf_model.predict(X_test)
-
-    rf_acc = accuracy_score(y_test, rf_pred)
-    rf_report = classification_report(y_test, rf_pred, output_dict=True)
+encoders = {}
+for col in df.select_dtypes(include='object').columns:
+    le = LabelEncoder()
+    df[col] = le.fit_transform(df[col].astype(str))
+    encoders[col] = le
 
 
-    xgb_model = XGBClassifier(
-        n_estimators=200,
-        max_depth=5,
-        learning_rate=0.1,
-        scale_pos_weight=10,
-        eval_metric='logloss',
-        use_label_encoder=False,
-        tree_method="hist"
-    )
+# =========================
+# CHECK TARGET COLUMN
+# =========================
 
-    xgb_model.fit(X_resampled, y_resampled)
-    xgb_pred = xgb_model.predict(X_test)
+if 'is_fraud' not in df.columns:
+    st.error("Dataset must contain 'is_fraud' column")
+    st.stop()
 
-    xgb_acc = accuracy_score(y_test, xgb_pred)
-    xgb_report = classification_report(y_test, xgb_pred, output_dict=True)
+X = df.drop('is_fraud', axis=1)
+y = df['is_fraud']
 
 
-    # =========================
-    # COMPARISON
-    # =========================
+# =========================
+# TRAIN TEST SPLIT
+# =========================
 
-    st.subheader("⚙️ Model Comparison")
-
-    comparison_df = pd.DataFrame({
-        "Model": ["Random Forest", "XGBoost"],
-        "Accuracy": [rf_acc, xgb_acc],
-        "Recall (Fraud)": [
-            rf_report["1"]["recall"],
-            xgb_report["1"]["recall"]
-        ],
-        "Precision (Fraud)": [
-            rf_report["1"]["precision"],
-            xgb_report["1"]["precision"]
-        ]
-    })
-
-    st.dataframe(comparison_df)
-
-    st.success("Final Model Selected: XGBoost")
-
-    model = xgb_model
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
 
 
-    # =========================
-    # CONFUSION MATRIX
-    # =========================
+# =========================
+# SMOTE
+# =========================
 
-    st.subheader("Confusion Matrix")
-
-    cm = confusion_matrix(y_test, xgb_pred)
-
-    fig, ax = plt.subplots()
-    sns.heatmap(cm, annot=True, fmt="d", ax=ax)
-    st.pyplot(fig)
+smote = SMOTE(random_state=42)
+X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
 
 
-    # =========================
-    # PREDICTION SYSTEM
-    # =========================
+# =========================
+# MODELS
+# =========================
 
-    st.subheader("Predict Transaction")
+rf_model = RandomForestClassifier(
+    n_estimators=100,
+    class_weight='balanced',
+    random_state=42
+)
 
-    sample_input = {}
+rf_model.fit(X_resampled, y_resampled)
+rf_pred = rf_model.predict(X_test)
 
-    categorical_cols = [
-        col for col in ['merchant', 'category', 'gender', 'city', 'state', 'Payment_Method']
-        if col in df_original.columns
+rf_acc = accuracy_score(y_test, rf_pred)
+rf_report = classification_report(y_test, rf_pred, output_dict=True)
+
+
+xgb_model = XGBClassifier(
+    n_estimators=200,
+    max_depth=5,
+    learning_rate=0.1,
+    scale_pos_weight=10,
+    eval_metric='logloss',
+    use_label_encoder=False,
+    tree_method="hist"
+)
+
+xgb_model.fit(X_resampled, y_resampled)
+xgb_pred = xgb_model.predict(X_test)
+
+xgb_acc = accuracy_score(y_test, xgb_pred)
+xgb_report = classification_report(y_test, xgb_pred, output_dict=True)
+
+
+# =========================
+# COMPARISON
+# =========================
+
+st.subheader("⚙️ Model Comparison")
+
+comparison_df = pd.DataFrame({
+    "Model": ["Random Forest", "XGBoost"],
+    "Accuracy": [rf_acc, xgb_acc],
+    "Recall (Fraud)": [
+        rf_report["1"]["recall"],
+        xgb_report["1"]["recall"]
+    ],
+    "Precision (Fraud)": [
+        rf_report["1"]["precision"],
+        xgb_report["1"]["precision"]
     ]
+})
 
-    for col in categorical_cols:
-        options = df_original[col].dropna().unique()
-        selected = st.selectbox(col, options)
+st.dataframe(comparison_df)
 
-        try:
-            sample_input[col] = encoders[col].transform([str(selected)])[0]
-        except:
-            sample_input[col] = 0
+st.success("Final Model Selected: XGBoost")
+
+model = xgb_model
 
 
-    numeric_cols = ['amt', 'city_pop', 'Customer_Age']
+# =========================
+# CONFUSION MATRIX
+# =========================
 
-    for col in numeric_cols:
-        if col in df.columns:
-            sample_input[col] = st.number_input(col, value=0.0)
+st.subheader("Confusion Matrix")
+
+cm = confusion_matrix(y_test, xgb_pred)
+
+fig, ax = plt.subplots()
+sns.heatmap(cm, annot=True, fmt="d", ax=ax)
+st.pyplot(fig)
 
 
-    if st.button("Predict Fraud"):
+# =========================
+# PREDICTION SYSTEM
+# =========================
 
-        input_df = pd.DataFrame([sample_input])
+st.subheader("Predict Transaction")
 
-        for col in X.columns:
-            if col not in input_df.columns:
-                input_df[col] = 0
+sample_input = {}
 
-        input_df = input_df.reindex(columns=X.columns, fill_value=0)
+categorical_cols = [
+    col for col in ['merchant', 'category', 'gender', 'city', 'state', 'Payment_Method']
+    if col in df_original.columns
+]
 
-        prob = model.predict_proba(input_df)[0][1]
-        fraud_percent = prob * 100
-        prediction = 1 if prob > threshold else 0
+for col in categorical_cols:
+    options = df_original[col].dropna().unique()
+    selected = st.selectbox(col, options)
 
-        fig = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=fraud_percent,
-            title={'text': "Fraud Risk (%)"},
-            gauge={
-                'axis': {'range': [0, 100]},
-                'steps': [
-                    {'range': [0, 30], 'color': "lightgreen"},
-                    {'range': [30, 70], 'color': "yellow"},
-                    {'range': [70, 100], 'color': "red"},
-                ],
-            }
-        ))
+    try:
+        sample_input[col] = encoders[col].transform([str(selected)])[0]
+    except:
+        sample_input[col] = 0
 
-        st.plotly_chart(fig)
 
-        st.write(f"Fraud Probability: {fraud_percent:.2f}%")
+numeric_cols = ['amt', 'city_pop', 'Customer_Age']
 
-        if prediction == 1:
-            st.error("⚠️ FRAUD DETECTED")
-        else:
-            st.success("✅ LEGITIMATE")
+for col in numeric_cols:
+    if col in df.columns:
+        sample_input[col] = st.number_input(col, value=0.0)
 
-        st.session_state.history.append({
-            "Probability": round(fraud_percent, 2),
-            "Result": "Fraud" if prediction == 1 else "Legit"
-        })
+
+if st.button("Predict Fraud"):
+
+    input_df = pd.DataFrame([sample_input])
+
+    for col in X.columns:
+        if col not in input_df.columns:
+            input_df[col] = 0
+
+    input_df = input_df.reindex(columns=X.columns, fill_value=0)
+
+    prob = model.predict_proba(input_df)[0][1]
+    fraud_percent = prob * 100
+    prediction = 1 if prob > threshold else 0
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=fraud_percent,
+        title={'text': "Fraud Risk (%)"},
+        gauge={
+            'axis': {'range': [0, 100]},
+            'steps': [
+                {'range': [0, 30], 'color': "lightgreen"},
+                {'range': [30, 70], 'color': "yellow"},
+                {'range': [70, 100], 'color': "red"},
+            ],
+        }
+    ))
+
+    st.plotly_chart(fig)
+
+    st.write(f"Fraud Probability: {fraud_percent:.2f}%")
+
+    if prediction == 1:
+        st.error("⚠️ FRAUD DETECTED")
+    else:
+        st.success("✅ LEGITIMATE")
+
+    st.session_state.history.append({
+        "Probability": round(fraud_percent, 2),
+        "Result": "Fraud" if prediction == 1 else "Legit"
+    })
 
 
 # =========================
