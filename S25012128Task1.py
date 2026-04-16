@@ -21,10 +21,8 @@ from imblearn.over_sampling import SMOTE
 from xgboost import XGBClassifier
 
 
-# =========================
-# LOGIN SYSTEM
-# =========================
 
+# LOGIN SYSTEM
 users = {
     "admin": {"password": "admin123", "role": "admin"},
     "user": {"password": "user123", "role": "user"}
@@ -60,18 +58,11 @@ def logout():
     st.rerun()
 
 
-# =========================
 # AUTH CHECK
-# =========================
-
 if not st.session_state.logged_in:
     login()
     st.stop()
-
-
-# =========================
 # MAIN APP
-# =========================
 
 st.title("💳 Fraud Detection Dashboard")
 
@@ -82,11 +73,7 @@ if st.sidebar.button("Logout"):
 
 threshold = st.sidebar.slider("Fraud Threshold", 0.1, 0.9, 0.3)
 
-
-# =========================
 # LOAD DATA FROM KAGGLE
-# =========================
-
 @st.cache_data
 def load_data():
     try:
@@ -115,10 +102,7 @@ st.dataframe(df.head())
 
 df_original = df.copy()
 
-
-# =========================
 # CLEANING
-# =========================
 
 df = df.drop(columns=[
     'Unnamed: 0', 'trans_date_trans_time', 'cc_num',
@@ -129,11 +113,7 @@ if 'merch_zipcode' in df.columns:
     imputer = SimpleImputer(strategy='most_frequent')
     df['merch_zipcode'] = imputer.fit_transform(df[['merch_zipcode']])
 
-
-# =========================
 # ENCODING
-# =========================
-
 encoders = {}
 for col in df.select_dtypes(include='object').columns:
     le = LabelEncoder()
@@ -141,9 +121,8 @@ for col in df.select_dtypes(include='object').columns:
     encoders[col] = le
 
 
-# =========================
+
 # CHECK TARGET COLUMN
-# =========================
 
 if 'is_fraud' not in df.columns:
     st.error("Dataset must contain 'is_fraud' column")
@@ -153,26 +132,25 @@ X = df.drop('is_fraud', axis=1)
 y = df['is_fraud']
 
 
-# =========================
+
 # TRAIN TEST SPLIT
-# =========================
+
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
 
-# =========================
+
 # SMOTE
-# =========================
+
 
 smote = SMOTE(random_state=42)
 X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
 
 
-# =========================
+
 # MODELS
-# =========================
 
 rf_model = RandomForestClassifier(
     n_estimators=100,
@@ -204,9 +182,8 @@ xgb_acc = accuracy_score(y_test, xgb_pred)
 xgb_report = classification_report(y_test, xgb_pred, output_dict=True)
 
 
-# =========================
+
 # COMPARISON
-# =========================
 
 st.subheader("⚙️ Model Comparison")
 
@@ -230,10 +207,7 @@ st.success("Final Model Selected: XGBoost")
 model = xgb_model
 
 
-# =========================
 # CONFUSION MATRIX
-# =========================
-
 st.subheader("Confusion Matrix")
 
 cm = confusion_matrix(y_test, xgb_pred)
@@ -243,9 +217,8 @@ sns.heatmap(cm, annot=True, fmt="d", ax=ax)
 st.pyplot(fig)
 
 
-# =========================
+
 # PREDICTION SYSTEM
-# =========================
 
 st.subheader("Predict Transaction")
 
@@ -315,10 +288,8 @@ if st.button("Predict Fraud"):
         "Result": "Fraud" if prediction == 1 else "Legit"
     })
 
-
-# =========================
 # HISTORY
-# =========================
+
 
 st.subheader("Transaction History")
 
